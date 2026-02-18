@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Shooter</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #000; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; }
+    </style>
+</head>
+<body>
+<script>
+class BootScene extends Phaser.Scene {
+    constructor() { super('BootScene'); }
+
+    preload() {
+        const w = this.cameras.main.width;
+        const h = this.cameras.main.height;
+        const bar = this.add.graphics();
+        const box = this.add.graphics();
+        box.fillStyle(0x222222, 0.8);
+        box.fillRect(w/2 - 160, h/2 - 25, 320, 50);
+        this.load.on('progress', v => {
+            bar.clear();
+            bar.fillStyle(0x00ff00, 1);
+            bar.fillRect(w/2 - 150, h/2 - 15, 300 * v, 30);
+        });
+
+        const g = this.make.graphics();
+        g.fillStyle(0x00ffff, 1);
+        g.beginPath(); g.moveTo(20, 0); g.lineTo(40, 40); g.lineTo(20, 30); g.lineTo(0, 40); g.closePath(); g.fillPath();
+        g.generateTexture('player', 40, 40);
+
+        g.clear();
+        g.fillStyle(0xffff00, 1);
+        g.fillRect(0, 0, 4, 15);
+        g.generateTexture('bullet', 4, 15);
+
+        g.clear();
+        g.fillStyle(0xff0000, 1);
+        g.beginPath(); g.moveTo(20, 0); g.lineTo(40, 40); g.lineTo(20, 30); g.lineTo(0, 40); g.closePath(); g.fillPath();
+        g.fillStyle(0xff6600, 1);
+        g.fillCircle(20, 20, 5);
+        g.generateTexture('enemy', 40, 40);
+
+        g.clear();
+        g.fillStyle(0xffffff, 1);
+        g.fillCircle(2, 2, 2);
+        g.generateTexture('star', 4, 4);
+    }
+
+    create() { this.scene.start('MenuScene'); }
+}
+
+class MenuScene extends Phaser.Scene {
+    constructor() { super('MenuScene'); }
+
+    create() {
+        const w = this.cameras.main.width, h = this.cameras.main.height;
+        this.add.text(w/2, h/3, 'SPACE SHOOTER', { fontSize: '64px', fill: '#00ffff' }).setOrigin(0.5);
+        this.add.text(w/2, h/2, 'Press SPACE to Start', { fontSize: '32px', fill: '#fff' }).setOrigin(0.5);
+        this.add.text(w/2, h - 50, 'Arrow Keys: Move | SPACE: Shoot', { fontSize: '16px', fill: '#888' }).setOrigin(0.5);
+        this.input.keyboard.on('keydown-SPACE', () => this.scene.start('GameScene'));
+        this.input.on('pointerdown', () => this.scene.start('GameScene'));
+        for (let i = 0; i < 50; i++) this.add.image(Phaser.Math.Between(0, w), Phaser.Math.Between(0, h), 'star');
+    }
+}
+
+class GameScene extends Phaser.Scene {
+    constructor() { super('GameScene'); }
+
+    create() {
+        this.score = 0; this.isGameOver = false; this.lastFired = 0;
+        this.createBackground();
+        this.player = this.physics.add.sprite(400, 500, 'player');
+        this.player.setCollideWorldBounds(true);
+        this.bullets = this.physics.add.group({ defaultKey: 'bullet', maxSize: 50 });
+        this.enemies = this.physics.add.group({ defaultKey: 'enemy', maxSize: 30 });
+        this.cursors = this.input.keyboard.createCursorKeys();
+        this.input.keyboard.on('keydown-SPACE', () => { if (!this.isGameOver) this.fireBullet(); });
+        this.scoreText = this.add.text(16, 16, 'Score: 0', { fontSize: '24px', fill: '#fff' });
+        this.add.text(16, 50, 'Arrows: Move | Space: Fire', { fontSize: '14px', fill: '#888' });
+        this.time.addEvent({ delay: 1500, callback: this.spawnEnemy, callbackScope: this, loop: true });
+    }
+
+    createBackground() {
+        for (let i = 0; i < 100; i++) {
+            const s = this.add.image(Phaser.Math.Between(0, 800), Phaser.Math.Between(0, 600), 'star');
+            s.setAlpha(Phaser.Math.FloatBetween(0.3, 1));
+            s.speed = Phaser.Math.FloatBetween(0.5, 2);
+        }
+    }
+
+    fireBullet() {
+        const now = this.time.now;
+        if (now - this.lastFired < 250) return;
+        this.lastFired = now;
+        const b = this.bullets.get(this.player.x, this.player.y - 20);
+        if (b) { b.setActive(true); b.setVisible(true); b.body.velocity.y = -500; }
+    }
+
+    spawnEnemy() {
+        if (this.isGameOver) return;
+        const e = this.enemies.get(Phaser.Math.Between(30, 770), -20);
+        if (e) { e.setActive(true); e.setVisible(true); e.body.velocity.y = Phaser.Math.Between(100, 200); e.body.velocity.x = Phaser.Math.Between(-30, 30); }
+    }
+
+    update() {
+        if (this.isGameOver) return;
+        this.children.list.forEach(c => { if (c.texture?.key === 'star' && c.speed) { c.y += c.speed; if (c.y > 600) { c.y = 0; c.x = Phaser.Math.Between(0, 800); }}});
+        const s = 300;
+        this.player.setVelocityX(this.cursors.left.isDown ? -s : this.cursors.right.isDown ? s : 0);
+        this.player.setVelocityY(this.cursors.up.isDown ? -s : this.cursors.down.isDown ? s : 0);
+        this.bullets.children.each(b => { if (b.active && b.y < -20) { b.setActive(false); b.setVisible(false); }});
+        this.enemies.children.each(e => { if (e.active) { if (e.y > 650) { e.setActive(false); e.setVisible(false); } if (e.x < 20 || e.x > 780) e.body.velocity.x *= -1; }});
+        this.physics.overlap(this.bullets, this.enemies, (b, e) => { b.setActive(false); b.setVisible(false); e.setActive(false); e.setVisible(false); this.score += 10; this.scoreText.setText('Score: ' + this.score); });
+        this.physics.overlap(this.player, this.enemies, () => this.gameOver());
+    }
+
+    gameOver() {
+        this.isGameOver = true;
+        this.physics.pause();
+        this.player.setTint(0xff0000);
+        this.time.delayedCall(1000, () => this.scene.start('GameOverScene', { score: this.score }));
+    }
+}
+
+class GameOverScene extends Phaser.Scene {
+    constructor() { super('GameOverScene'); }
+    init(d) { this.finalScore = d.score || 0; }
+    create() {
+        const w = this.cameras.main.width, h = this.cameras.main.height;
+        this.add.text(w/2, h/3, 'GAME OVER', { fontSize: '64px', fill: '#f00' }).setOrigin(0.5);
+        this.add.text(w/2, h/2, 'Score: ' + this.finalScore, { fontSize: '36px', fill: '#fff' }).setOrigin(0.5);
+        this.add.text(w/2, h/2 + 60, 'Press SPACE to Restart', { fontSize: '24px', fill: '#ff0' }).setOrigin(0.5);
+        this.input.keyboard.on('keydown-SPACE', () => this.scene.start('GameScene'));
+        this.input.on('pointerdown', () => this.scene.start('GameScene'));
+        for (let i = 0; i < 50; i++) this.add.image(Phaser.Math.Between(0, w), Phaser.Math.Between(0, h), 'star');
+    }
+}
+
+new Phaser.Game({
+    type: Phaser.AUTO, width: 800, height: 600,
+    backgroundColor: '#000000',
+    physics: { default: 'arcade', arcade: { gravity: { y: 0 }, debug: false }},
+    scene: [BootScene, MenuScene, GameScene, GameOverScene]
+});
+</script>
+</body>
+</html>
